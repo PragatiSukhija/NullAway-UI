@@ -4,13 +4,14 @@ import {AnyAction, ThunkAction as ReduxThunkAction} from '@reduxjs/toolkit';
 import {clippyRequestSelector, codeSelector, getAction} from './selectors';
 import State from './state';
 import {
+  AnnotatorConfigData,
   AssemblyFlavor,
   Crate,
   DemangleAssembly,
   Editor,
   Focus,
   makePosition,
-  Notification,
+  Notification, NullAwayConfigData,
   Orientation,
   Page,
   PairCharacters,
@@ -27,6 +28,7 @@ import {
 
 import { performCommonExecute, wsExecuteRequest} from './reducers/output/execute';
 import {performGistLoad} from './reducers/output/gist';
+
 
 export const routes = {
   compile: '/compile',
@@ -53,6 +55,7 @@ export type SimpleThunkAction<T = void> = ReduxThunkAction<T, State, {}, AnyActi
 const createAction = <T extends string, P extends {}>(type: T, props?: P) => (
   Object.assign({ type }, props)
 );
+
 
 export enum ActionType {
   InitializeApplication = 'INITIALIZE_APPLICATION',
@@ -108,6 +111,7 @@ export enum ActionType {
   SplitRatioChanged = 'SPLIT_RATIO_CHANGED',
 }
 
+
 export const initializeApplication = () => createAction(ActionType.InitializeApplication);
 
 export const disableSyncChangesToStorage = () => createAction(ActionType.DisableSyncChangesToStorage);
@@ -118,8 +122,11 @@ const setPage = (page: Page) =>
 export const navigateToIndex = () => setPage('index');
 export const navigateToHelp = () => setPage('help');
 
+
 export const changeEditor = (editor: Editor) =>
   createAction(ActionType.ChangeEditor, { editor });
+
+
 
 export const changeKeybinding = (keybinding: string) =>
   createAction(ActionType.ChangeKeybinding, { keybinding });
@@ -132,6 +139,7 @@ export const changeMonacoTheme = (theme: string) =>
 
 export const changePairCharacters = (pairCharacters: PairCharacters) =>
   createAction(ActionType.ChangePairCharacters, { pairCharacters });
+
 
 export const changeOrientation = (orientation: Orientation) =>
   createAction(ActionType.ChangeOrientation, { orientation });
@@ -219,6 +227,9 @@ async function fetchJson(url: FetchArg, args: RequestInit) {
   }
 }
 
+
+
+
 // We made some strange decisions with how the `fetchJson` function
 // communicates errors, so we untwist those here to fit better with
 // redux-toolkit's ideas.
@@ -254,6 +265,11 @@ function performAutoOnly(): ThunkAction {
 const performExecuteOnly = (): ThunkAction => performCommonExecute('run');
 const performCompileOnly = (): ThunkAction => performCommonExecute('build');
 
+const performNullAwayCompileOnly = (configData?: NullAwayConfigData): ThunkAction =>
+  performCommonExecute('buildWithNullAway', configData);
+
+const performRunAnnotatorOnly = (configData?: NullAwayConfigData,annotatorConfig?: AnnotatorConfigData): ThunkAction =>
+  performCommonExecute('runAnnotator', undefined,annotatorConfig);
 
 interface CompileSuccess {
   code: string;
@@ -264,6 +280,7 @@ interface CompileSuccess {
 interface CompileFailure {
   error: string;
 }
+
 
 const requestCompileAssembly = () =>
   createAction(ActionType.CompileAssemblyRequest);
@@ -310,9 +327,15 @@ const receiveCompileWasmSuccess = ({ code, stdout, stderr }: CompileSuccess) =>
 const receiveCompileWasmFailure = ({ error }: CompileFailure) =>
   createAction(ActionType.CompileWasmFailed, { error });
 
+const performRunAnnotator = (annotatorConfig?: AnnotatorConfigData) => {
+  return performCommonExecute('runAnnotator', undefined, annotatorConfig);
+};
+
 const PRIMARY_ACTIONS: { [index in PrimaryAction]: () => ThunkAction } = {
   [PrimaryActionCore.Compile]: performCompileOnly,
   [PrimaryActionCore.Execute]: performExecuteOnly,
+  [PrimaryActionCore.ExecuteNullAway] : performNullAwayCompileOnly,
+  [PrimaryActionCore.RunAnnotator] : performRunAnnotator,
   [PrimaryActionAuto.Auto]: performAutoOnly,
 };
 
@@ -322,9 +345,12 @@ export const performPrimaryAction = (): ThunkAction => (dispatch, getState) => {
   dispatch(primaryAction());
 };
 
-const performAndSwitchPrimaryAction = (inner: () => ThunkAction, id: PrimaryAction) => (): ThunkAction => dispatch => {
+const performAndSwitchPrimaryAction = (
+  inner: (configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData) => ThunkAction,
+  id: PrimaryAction
+) => (configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData): ThunkAction => dispatch => {
   dispatch(changePrimaryAction(id));
-  dispatch(inner());
+  dispatch(inner(configData, annotatorConfig));
 };
 
 export const performExecute =
@@ -332,8 +358,18 @@ export const performExecute =
 export const performCompile =
   performAndSwitchPrimaryAction(performCompileOnly, PrimaryActionCore.Compile);
 
+export const performNullAwayCompile = (configData?: NullAwayConfigData) => {
+  return performAndSwitchPrimaryAction(performNullAwayCompileOnly, PrimaryActionCore.ExecuteNullAway)(configData);
+};
+
+export const runAnnotator = (annotatorConfigData?: AnnotatorConfigData) => {
+  return performAndSwitchPrimaryAction(performRunAnnotatorOnly, PrimaryActionCore.RunAnnotator)(undefined, annotatorConfigData);
+};
+
+
 export const editCode = (code: string) =>
   createAction(ActionType.EditCode, { code });
+
 
 export const addMainFunction = () =>
   createAction(ActionType.AddMainFunction);
@@ -554,6 +590,7 @@ function parsePreview(s?: string): Preview | null {
   }
 }
 
+
 export function indexPageLoad({
   code,
   gist,
@@ -570,6 +607,7 @@ export function indexPageLoad({
 
     if (code) {
       dispatch(editCode(code));
+      //dispatch(loadCodeFromFile())
     } else if (gist) {
       dispatch(performGistLoad({ id: gist, runtime, release, preview }));
     }

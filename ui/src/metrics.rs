@@ -113,8 +113,8 @@ pub(crate) trait GenerateLabels {
 }
 
 impl<T> GenerateLabels for &'_ T
-where
-    T: GenerateLabels,
+    where
+        T: GenerateLabels,
 {
     fn generate_labels(&self, outcome: Outcome) -> Labels {
         T::generate_labels(self, outcome)
@@ -129,6 +129,7 @@ impl GenerateLabels for sandbox::CompileRequest {
             release,
             preview,
             code: _,
+            ..
         } = *self;
 
         Labels {
@@ -150,6 +151,7 @@ impl GenerateLabels for sandbox::ExecuteRequest {
             action,
             preview,
             code: _,
+            ..
         } = *self;
 
         Labels {
@@ -224,10 +226,10 @@ impl SuccessDetails for sandbox::Version {
 }
 
 pub(crate) async fn track_metric_async<Req, B, Resp>(request: Req, body: B) -> sandbox::Result<Resp>
-where
-    Req: GenerateLabels,
-    for<'req> B: FnOnce(&'req Req) -> BoxFuture<'req, sandbox::Result<Resp>>,
-    Resp: SuccessDetails,
+    where
+        Req: GenerateLabels,
+        for<'req> B: FnOnce(&'req Req) -> BoxFuture<'req, sandbox::Result<Resp>>,
+        Resp: SuccessDetails,
 {
     track_metric_common_async(request, body, |_| {}).await
 }
@@ -237,11 +239,11 @@ async fn track_metric_common_async<Req, B, Resp, F>(
     body: B,
     f: F,
 ) -> sandbox::Result<Resp>
-where
-    Req: GenerateLabels,
-    for<'req> B: FnOnce(&'req Req) -> BoxFuture<'req, sandbox::Result<Resp>>,
-    Resp: SuccessDetails,
-    F: FnOnce(&mut Labels),
+    where
+        Req: GenerateLabels,
+        for<'req> B: FnOnce(&'req Req) -> BoxFuture<'req, sandbox::Result<Resp>>,
+        Resp: SuccessDetails,
+        F: FnOnce(&mut Labels),
 {
     let start = Instant::now();
     let response = body(&request).await;
@@ -260,9 +262,9 @@ pub(crate) async fn track_metric_no_request_async<B, Fut, Resp>(
     endpoint: Endpoint,
     body: B,
 ) -> crate::Result<Resp>
-where
-    B: FnOnce() -> Fut,
-    Fut: Future<Output = crate::Result<Resp>>,
+    where
+        B: FnOnce() -> Fut,
+        Fut: Future<Output = crate::Result<Resp>>,
 {
     let start = Instant::now();
     let response = body().await;

@@ -27,15 +27,24 @@ const useDispatchAndClose = (action: () => actions.ThunkAction, close: () => voi
 const BuildMenu: React.FC<BuildMenuProps> = props => {
   const compile = useDispatchAndClose(actions.performCompile, props.close);
   const execute = useDispatchAndClose(actions.performExecute, props.close);
+  const nullawaycompile = useDispatchAndClose(actions.performNullAwayCompile, props.close);
+  const annotate = useDispatchAndClose(actions.runAnnotator, props.close);
 
   return (
     <MenuGroup title="Run Now">
-      <ButtonMenuItem name="Run" onClick={execute}>
-          Build and run the code, showing the output. Equivalent to <Code>java Main.java</Code>.
+      <ButtonMenuItem name="Build With NullAway" onClick={nullawaycompile}>
+          Build the code with NullAway without running it.
+      </ButtonMenuItem>
+      <ButtonMenuItem name="Annotate" onClick={annotate}>
+            Annotate the code with NullAway Annotator.
+      </ButtonMenuItem>
+
+        {/* <ButtonMenuItem name="Run" onClick={execute}>
+            Build and run the code, showing the output. Equivalent to <Code>java Main.java</Code>.
       </ButtonMenuItem>
       <ButtonMenuItem name="Build" onClick={compile}>
-          Build the code without running it. Equivalent to <Code>javac Main.java</Code>.
-      </ButtonMenuItem>
+            Build the code without running it. Equivalent to <Code>javac Main.java</Code>.
+      </ButtonMenuItem> */}
     </MenuGroup>
   );
 };

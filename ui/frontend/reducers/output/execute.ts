@@ -3,7 +3,7 @@ import * as z from 'zod';
 
 import { SimpleThunkAction, adaptFetchError, jsonPost, routes } from '../../actions';
 import { executeRequestPayloadSelector, useWebsocketSelector } from '../../selectors';
-import { Release, Runtime } from '../../types';
+import {AnnotatorConfigData, NullAwayConfigData, Release, Runtime} from '../../types';
 import {
   WsPayloadAction,
   createWebsocketResponseAction,
@@ -79,6 +79,10 @@ const slice = createSlice({
         meta: makeWebSocketMeta(),
       }),
     },
+
+    resetStdout: (state) => {
+      state.stdout = undefined;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -117,8 +121,9 @@ const slice = createSlice({
   },
 });
 
-export const { wsExecuteRequest } = slice.actions;
+export const { wsExecuteRequest, resetStdout } = slice.actions;
 
+/*
 export const performCommonExecute =
   (action: string): SimpleThunkAction =>
   (dispatch, getState) => {
@@ -132,6 +137,23 @@ export const performCommonExecute =
       dispatch(performExecute(body));
     }
   };
+*/
+
+export const performCommonExecute =
+    (action: string, configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData): SimpleThunkAction =>
+        (dispatch, getState) => {
+          console.log('Annotator Config Data:', annotatorConfig);
+          const state = getState();
+          const body = executeRequestPayloadSelector(state, { action, configData, annotatorConfig });
+          const useWebSocket = useWebsocketSelector(state);
+
+          if (useWebSocket) {
+            dispatch(wsExecuteRequest(body));
+          } else {
+            dispatch(performExecute(body));
+          }
+        };
+
 
 export const wsExecuteResponseSchema = createWebsocketResponseSchema(
   wsExecuteResponse,

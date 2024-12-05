@@ -9,7 +9,7 @@ import {
   Preview,
   PrimaryActionAuto,
   PrimaryActionCore,
-  Version, Runtime,
+  Version, Runtime, NullAwayConfigData, AnnotatorConfigData,
 } from '../types';
 
 export const codeSelector = (state: State) => state.code;
@@ -29,7 +29,7 @@ const autoPrimaryActionSelector = createSelector(
     if (hasMainFunction) {
       return PrimaryActionCore.Execute;
     } else {
-      return PrimaryActionCore.Compile;
+      return PrimaryActionCore.ExecuteNullAway;
     }
   },
 );
@@ -44,7 +44,11 @@ export const getAction = createSelector(
   ( primaryAction) => {
     if (primaryAction === PrimaryActionCore.Execute) {
       return 'run';
-    } else {
+    }
+    if (primaryAction === PrimaryActionCore.ExecuteNullAway){
+      return 'buildWithNullAway'
+    }
+    else {
       return 'build';
     }
   },
@@ -56,7 +60,7 @@ export const isAutoBuildSelector = createSelector(
   rawPrimaryActionSelector,
   autoPrimaryActionSelector,
   (primaryAction, autoPrimaryAction) => (
-    primaryAction === PrimaryActionAuto.Auto && autoPrimaryAction === PrimaryActionCore.Compile
+    primaryAction === PrimaryActionAuto.Auto && autoPrimaryAction === PrimaryActionCore.ExecuteNullAway
   ),
 );
 
@@ -71,6 +75,9 @@ const primaryActionSelector = createSelector(
 const LABELS: { [index in PrimaryActionCore]: string } = {
   [PrimaryActionCore.Compile]: 'Build',
   [PrimaryActionCore.Execute]: 'Run',
+  [PrimaryActionCore.ExecuteNullAway]: 'Build With NullAway',
+  [PrimaryActionCore.RunAnnotator]: 'Run Annotator',
+
 };
 
 export const getExecutionLabel = createSelector(primaryActionSelector, primaryAction => LABELS[primaryAction]);
@@ -125,7 +132,14 @@ export const getAdvancedOptionsSet = createSelector(
   ),
 );
 
-export const hasProperties = (obj: {}) => Object.values(obj).some(val => !!val);
+export const hasProperties = (obj: {}) => {
+  const values = Object.values(obj);
+  const hasTruthyValues = values.some(val => !!val);
+  const hasEmptyStrings = values.length > 1 && values.slice(1).every(val => val === '' || val === undefined);
+  return hasTruthyValues || hasEmptyStrings;
+};
+
+
 
 const getOutputs = (state: State) => [
   state.output.assembly,
@@ -339,6 +353,7 @@ export const websocketStatusSelector = createSelector(
   }
 );
 
+/*
 export const executeRequestPayloadSelector = createSelector(
   codeSelector,
   (state: State) => state.configuration,
@@ -351,3 +366,20 @@ export const executeRequestPayloadSelector = createSelector(
     preview: configuration.preview == Preview.Enabled,
   }),
 );
+ */
+
+export const executeRequestPayloadSelector = createSelector(
+  codeSelector,
+  (state: State) => state.configuration,
+  (_state: State, { action, configData, annotatorConfig }: { action: string; configData?: NullAwayConfigData; annotatorConfig?: AnnotatorConfigData}) => ({ action, configData, annotatorConfig }),
+  (code, configuration, { action, configData, annotatorConfig }) => ({
+    runtime: configuration.runtime,
+    release: configuration.release,
+    action,
+    code,
+    preview: configuration.preview == Preview.Enabled,
+    ...configData && { configData }, // Add configData if it exists
+    ...annotatorConfig && {annotatorConfig},
+  }),
+);
+
