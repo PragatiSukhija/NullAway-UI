@@ -29,11 +29,26 @@ export interface ReallySimplePaneProps {
   stdout?: string;
   stderr?: string;
   error?: string;
+  progressMessage?: string;
+  finishedMessage? :string;
 }
 
 const SimplePane: React.FC<SimplePaneProps> = props => (
   <div data-test-id={`output-${props.kind}`}>
-    {(props.requestsInProgress > 0) && <Loader />}
+    {props.requestsInProgress > 0 ? (
+      <Loader progressMessage={props.progressMessage} />
+    ) : (
+      <div>
+        <Header label="Progress" /><br/>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {props.finishedMessage && !props.stderr && (
+            <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}>
+              {props.finishedMessage}
+            </span>
+          )}
+        </div>
+      </div>
+    )}
     <Section kind="error" label="Errors">{props.error}</Section>
     <HighlightErrors label="Standard Error">{props.stderr}</HighlightErrors>
     <Section kind="stdout" label="Standard Output">{props.stdout}</Section>

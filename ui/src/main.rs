@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms)]
 
 use crate::env::{PLAYGROUND_GITHUB_TOKEN, PLAYGROUND_UI_ROOT};
-use crate::sandbox::Action;
+use crate::sandbox::{Action, AnnotatorConfig};
 use serde::{Deserialize, Serialize};
 use snafu::prelude::*;
 use std::{
@@ -13,7 +13,7 @@ use std::{
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-const DEFAULT_ADDRESS: &str = "127.0.0.1";
+const DEFAULT_ADDRESS: &str = "0.0.0.0";
 const DEFAULT_PORT: u16 = 5000;
 
 mod env;
@@ -214,9 +214,25 @@ pub enum Error {
 
 type Result<T, E = Error> = ::std::result::Result<T, E>;
 
+
 #[derive(Debug, Clone, Serialize)]
 struct ErrorJson {
     error: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct NullAwayConfigData {
+    #[serde(rename = "castToNonNullMethod")]
+    pub cast_to_non_null_method: Option<String>,
+
+    #[serde(rename = "checkOptionalEmptiness")]
+    pub check_optional_emptiness: bool,
+
+    #[serde(rename = "checkContracts")]
+    pub check_contracts: bool,
+
+    #[serde(rename = "jSpecifyMode")]
+    pub j_specify_mode: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -228,6 +244,10 @@ struct CompileRequest {
     #[serde(default)]
     preview: bool,
     code: String,
+    #[serde(rename = "configData")]
+    nullaway_config_data: Option<NullAwayConfigData>,
+    #[serde(rename = "annotatorConfig")]
+    annotator_config: Option<AnnotatorConfig>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -247,6 +267,11 @@ struct ExecuteRequest {
     #[serde(default)]
     preview: bool,
     code: String,
+    #[serde(rename = "configData")]
+    nullaway_config_data: Option<NullAwayConfigData>,
+    #[serde(rename = "annotatorConfig")]
+    annotator_config: Option<AnnotatorConfig>,
+
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -297,6 +322,16 @@ impl TryFrom<CompileRequest> for sandbox::CompileRequest {
             action: parse_action(&me.action)?.unwrap_or(Action::Build),
             preview: me.preview,
             code: me.code,
+            nullaway_config_data: me.nullaway_config_data.map(|data| sandbox::NullAwayConfigData {
+                cast_to_non_null_method: data.cast_to_non_null_method,
+                check_optional_emptiness: data.check_optional_emptiness,
+                check_contracts: data.check_contracts,
+                j_specify_mode: data.j_specify_mode,
+            }),
+            annotator_config: me.annotator_config.map(|data| sandbox::AnnotatorConfig {
+                nullUnmarked: data.nullUnmarked,
+            }),
+
         })
     }
 }
@@ -322,6 +357,16 @@ impl TryFrom<ExecuteRequest> for sandbox::ExecuteRequest {
             action: parse_action(&me.action)?.unwrap_or(Action::Run),
             preview: me.preview,
             code: me.code,
+            nullaway_config_data: me.nullaway_config_data.map(|data| sandbox::NullAwayConfigData {
+                cast_to_non_null_method: data.cast_to_non_null_method,
+                check_optional_emptiness: data.check_optional_emptiness,
+                check_contracts: data.check_contracts,
+                j_specify_mode: data.j_specify_mode,
+            }),
+            annotator_config: me.annotator_config.map(|data| sandbox::AnnotatorConfig {
+                nullUnmarked: data.nullUnmarked,
+            }),
+
         })
     }
 }
@@ -409,6 +454,8 @@ fn parse_action(s: &str) -> Result<Option<sandbox::Action>> {
         "" => None,
         "run" => Some(Action::Run),
         "build" => Some(Action::Build),
+        "buildWithNullAway" => Some(Action::BuildWithNullAway),
+        "runAnnotator" => Some(Action::RunAnnotator),
         value => InvalidActionSnafu { value }.fail()?,
     })
 }

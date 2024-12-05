@@ -1,13 +1,16 @@
-use crate::sandbox::Action::Run;
+use crate::sandbox::Action::{BuildWithNullAway, Run, RunAnnotator};
 use serde_derive::Deserialize;
 use snafu::prelude::*;
 use std::{io, os::unix::fs::PermissionsExt, path::PathBuf, string, time::Duration};
+use std::path::Path;
+use regex::Regex;
 use tempfile::TempDir;
 use tokio::{fs, process::Command, time};
 use tracing::debug;
+use crate::sandbox::Error::FailedToCopyFileFromContainer;
 
 pub(crate) const DOCKER_PROCESS_TIMEOUT_SOFT: Duration = Duration::from_secs(10);
-const DOCKER_PROCESS_TIMEOUT_HARD: Duration = Duration::from_secs(12);
+const DOCKER_PROCESS_TIMEOUT_HARD: Duration = Duration::from_secs(100);
 
 #[derive(Debug, Deserialize)]
 struct CrateInformationInner {
@@ -41,6 +44,8 @@ pub struct Version {
 pub enum Error {
     #[snafu(display("Unable to create temporary directory: {}", source))]
     UnableToCreateTempDir { source: io::Error },
+    #[snafu(display("Unable to read annotated Main.java file from the container: {}", source))]
+    FailedToReadAnnotatedFile { source: io::Error },
     #[snafu(display("Unable to create output directory: {}", source))]
     UnableToCreateOutputDir { source: io::Error },
     #[snafu(display("Unable to set permissions for output directory: {}", source))]
@@ -49,6 +54,8 @@ pub enum Error {
     UnableToCreateSourceFile { source: io::Error },
     #[snafu(display("Unable to set permissions for source file: {}", source))]
     UnableToSetSourcePermissions { source: io::Error },
+    #[snafu(display("Failed to copy file from container: {}", source))]
+    FailedToCopyFileFromContainer { source: io::Error },
 
     #[snafu(display("Unable to start the compiler: {}", source))]
     UnableToStartCompiler { source: io::Error },
@@ -75,6 +82,8 @@ pub enum Error {
     #[snafu(display("Output was missing"))]
     OutputMissing,
     #[snafu(display("Release was missing from the version output"))]
+    PackageNameMissing,
+    #[snafu(display("Package name is missing or could not be parsed"))]
     VersionReleaseMissing,
     #[snafu(display("Commit hash was missing from the version output"))]
     VersionHashMissing,
@@ -139,7 +148,8 @@ fn basic_secure_docker_command() -> Command {
 }
 
 fn build_execution_command(
-    req: &(impl ActionRequest + PreviewRequest + ReleaseRequest + RuntimeRequest),
+    req: &(impl ActionRequest + PreviewRequest + ReleaseRequest + RuntimeRequest + NullAwayConfigDataRequest + AnnotatorConfigRequest),
+    package_name: &str,
 ) -> Vec<String> {
     use self::Action::*;
 
@@ -151,6 +161,7 @@ fn build_execution_command(
         .java_release();
 
     let action = req.action();
+
 
     if action == Run {
         cmd.push("java".to_string());
@@ -166,7 +177,125 @@ fn build_execution_command(
         }
 
         cmd.push("Main.java".to_string());
-    } else if action == Build {
+    } else if action == BuildWithNullAway{
+
+        cmd.push("javac".to_string());
+        cmd.extend(["--module-path".to_string(), "dependencies".to_string()]);
+        cmd.extend(["--add-modules".to_string(), "ALL-MODULE-PATH".to_string()]);
+        cmd.extend(["--release".to_string(), release.to_string()]);
+        cmd.extend(["-d".to_string(), "out".to_string()]);
+
+        if req.preview() {
+            cmd.push("--enable-preview".to_string());
+        }
+
+        //Added for Error-prone integration
+        cmd.extend([
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED".to_string(),
+            "-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED".to_string(),
+            "-J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED".to_string(),
+            "-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED".to_string(),
+            "-XDcompilePolicy=simple".to_string(),
+            "-processorpath".to_string(),
+            "plugins/error_prone_core-2.32.0-with-dependencies.jar:plugins/dataflow-errorprone-3.42.0-eisop4.jar:plugins/nullaway-0.10.25.jar:plugins/jspecify-1.0.0.jar:plugins/dataflow-nullaway-3.47.0.jar:plugins/checker-qual-3.9.1.jar:plugins/jsr305-3.0.2.jar".to_string()
+        ]);
+
+        let mut nullaway_options = String::from("-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR");
+
+        if !package_name.is_empty() {
+            nullaway_options.push_str(&format!(" -XepOpt:NullAway:AnnotatedPackages={}", package_name));
+        }
+
+        if let Some(nullaway_config_data) = req.nullaway_config_data() {
+
+            if let Some(cast_method) = &nullaway_config_data.cast_to_non_null_method {
+                if !cast_method.is_empty() {
+                    nullaway_options.push_str(&format!(" -XepOpt:NullAway:CastToNonNullMethod={}", cast_method));
+                }
+            }
+
+            if nullaway_config_data.check_optional_emptiness {
+                nullaway_options.push_str(" -XepOpt:NullAway:CheckOptionalEmptiness=true");
+            }
+
+            if nullaway_config_data.check_contracts {
+                nullaway_options.push_str(" -XepOpt:NullAway:CheckContracts=true");
+            }
+
+            if nullaway_config_data.j_specify_mode {
+                nullaway_options.push_str(" -XepOpt:NullAway:JSpecifyMode=true");
+            }
+        }
+
+        cmd.extend([nullaway_options]);
+
+        cmd.push("Main.java".to_string());
+
+        //println!("{:?}", cmd);
+
+    }else if action == RunAnnotator {
+        cmd.push("sh".to_string());
+        cmd.push("-c".to_string());
+
+        // Base Java command
+        let mut java_command = format!(
+            "java -jar plugins/annotator-core-1.3.15.jar \
+        -d playground-result/ \
+        -cp config/paths.tsv \
+        -i com.example.Initializer \
+        -cn NULLAWAY \
+        -bc 'sh -c \"javac \
+            --module-path dependencies \
+            --add-modules ALL-MODULE-PATH \
+            -d output/ \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED \
+            -J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED \
+            -J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED \
+            -J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED \
+            -XDcompilePolicy=simple \
+            -processorpath {processor_path} \
+            -Xplugin:\\\"ErrorProne \
+            -Xep:NullAway:ERROR \
+            -Xep:AnnotatorScanner:ERROR \
+            -XepOpt:NullAway:AnnotatedPackages={package} \
+            -XepOpt:NullAway:SerializeFixMetadata=true \
+            -XepOpt:NullAway:FixSerializationConfigPath=config/nullaway.xml \
+            -XepOpt:AnnotatorScanner:ConfigPath=config/scanner.xml\\\" \
+            Main.java\"' --nullable org.jspecify.annotations.Nullable",
+            processor_path = "plugins/error_prone_core-2.32.0-with-dependencies.jar:\
+            plugins/dataflow-errorprone-3.42.0-eisop4.jar:\
+            plugins/nullaway-0.10.25.jar:\
+            plugins/jspecify-1.0.0.jar:\
+            plugins/dataflow-nullaway-3.47.0.jar:\
+            plugins/checker-qual-3.9.1.jar:\
+            plugins/jsr305-3.0.2.jar:\
+            plugins/annotator-scanner-1.3.15.jar",
+            package = package_name
+        );
+
+
+        if let Some(annotator_config) = req.annotator_config() {
+            if annotator_config.nullUnmarked {
+                java_command.push_str(" -sre org.jspecify.annotations.NullUnmarked");
+            }
+        }
+
+        java_command.push_str(" > /dev/null 2>&1 && cat Main.java");
+        cmd.push(java_command);
+
+    }else if action==Build{
         cmd.push("javac".to_string());
         cmd.extend(["--module-path".to_string(), "dependencies".to_string()]);
         cmd.extend(["--add-modules".to_string(), "ALL-MODULE-PATH".to_string()]);
@@ -219,7 +348,21 @@ impl Sandbox {
 
     pub async fn execute(&self, req: &ExecuteRequest) -> Result<ExecuteResponse> {
         self.write_source_code(&req.code).await?;
-        let command = self.execute_command(req);
+
+        let package_name = self.extract_package_name(&req.code);
+        let action = req.action();
+
+        if (action == BuildWithNullAway || action == RunAnnotator) && package_name.is_empty() {
+            return Ok(ExecuteResponse {
+                success: false,
+                stdout: String::new(),
+                stderr: "Error: Package name is either missing or could not be parsed. Please specify a valid package name.\n\
+                NullAway and NullAway Annotator require valid package declarations.".to_string(),
+            });
+        }
+
+        let command = self.execute_command(req, &package_name);
+        //println!("Running command: {:?}", command);
 
         let output = run_command_with_timeout(command).await?;
 
@@ -228,6 +371,22 @@ impl Sandbox {
             stdout: vec_to_str(output.stdout)?,
             stderr: vec_to_str(output.stderr)?,
         })
+    }
+
+    fn extract_package_name(&self, code: &str) -> String {
+
+        let package_regex = Regex::new(r"(?m)^\s*package\s+([\w\.]+);");
+
+        if let Ok(regex) = package_regex {
+
+            if let Some(captures) = regex.captures(code) {
+                if let Some(package_name) = captures.get(1) {
+                    return package_name.as_str().to_string();
+                }
+            }
+        }
+
+        String::new()
     }
 
     pub async fn crates(&self) -> Result<Vec<CrateInformation>> {
@@ -286,11 +445,12 @@ impl Sandbox {
 
     fn execute_command(
         &self,
-        req: impl ActionRequest + ReleaseRequest + PreviewRequest + RuntimeRequest,
+        req: impl ActionRequest + ReleaseRequest + PreviewRequest + RuntimeRequest + NullAwayConfigDataRequest + AnnotatorConfigRequest,
+        package_name: &str,
     ) -> Command {
         let mut cmd = self.docker_command(Some(req.action()));
 
-        let execution_cmd = build_execution_command(&req);
+        let execution_cmd = build_execution_command(&req,package_name);
 
         cmd.arg(&req.runtime().container_name())
             .args(&execution_cmd);
@@ -324,11 +484,15 @@ impl Sandbox {
 }
 
 async fn run_command_with_timeout(mut command: Command) -> Result<std::process::Output> {
+
+    //println!("Running command: {:?}", command);
+
     use std::os::unix::process::ExitStatusExt;
 
     let timeout = DOCKER_PROCESS_TIMEOUT_HARD;
 
     let output = command.output().await.context(UnableToStartCompilerSnafu)?;
+
 
     // Exit early, in case we don't have the container
     if !output.status.success() {
@@ -372,6 +536,21 @@ async fn run_command_with_timeout(mut command: Command) -> Result<std::process::
         .context(UnableToGetOutputFromCompilerSnafu)?;
 
     // ----------
+
+    //Adding this to copy annotated Main.java file to working directory.
+    /*
+    let local_path = "frontend/Main.java";
+    let container_path = format!("{}:playground/Main.java", id);
+    let mut copy_command = Command::new("docker");
+    copy_command.args(["cp", &container_path, local_path]);
+    let _ = copy_command
+        .output()
+        .await
+        .context(FailedToCopyFileFromContainerSnafu)?;
+
+    */
+
+
 
     let mut command = docker_command!(
         "rm", // Kills container if still running
@@ -466,6 +645,8 @@ impl Release {
 pub enum Action {
     Run,
     Build,
+    BuildWithNullAway,
+    RunAnnotator
 }
 
 impl Action {
@@ -496,6 +677,8 @@ impl<R: ActionRequest> ActionRequest for &'_ R {
     }
 }
 
+
+
 trait ReleaseRequest {
     fn release(&self) -> Option<Release>;
 }
@@ -520,6 +703,15 @@ trait RuntimeRequest {
     fn runtime(&self) -> Runtime;
 }
 
+pub trait NullAwayConfigDataRequest {
+    fn nullaway_config_data(&self) -> Option<&NullAwayConfigData>;
+}
+
+pub trait AnnotatorConfigRequest {
+    fn annotator_config(&self) -> Option<&AnnotatorConfig>;
+}
+
+
 impl<R: RuntimeRequest> RuntimeRequest for &'_ R {
     fn runtime(&self) -> Runtime {
         (*self).runtime()
@@ -533,11 +725,25 @@ pub struct CompileRequest {
     pub release: Option<Release>,
     pub preview: bool,
     pub code: String,
+    pub nullaway_config_data: Option<NullAwayConfigData>,
+    pub annotator_config: Option<AnnotatorConfig>,
+
 }
 
 impl ActionRequest for CompileRequest {
     fn action(&self) -> Action {
         self.action
+    }
+}
+impl NullAwayConfigDataRequest for CompileRequest {
+    fn nullaway_config_data(&self) -> Option<&NullAwayConfigData> {
+        self.nullaway_config_data.as_ref()
+    }
+}
+
+impl AnnotatorConfigRequest for CompileRequest {
+    fn annotator_config(&self) -> Option<&AnnotatorConfig> {
+        self.annotator_config.as_ref()
     }
 }
 
@@ -559,6 +765,27 @@ impl RuntimeRequest for CompileRequest {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct NullAwayConfigData {
+    #[serde(rename = "castToNonNullMethod")]
+    pub cast_to_non_null_method: Option<String>,
+
+    #[serde(rename = "checkOptionalEmptiness")]
+    pub check_optional_emptiness: bool,
+
+    #[serde(rename = "checkContracts")]
+    pub check_contracts: bool,
+
+    #[serde(rename = "jSpecifyMode")]
+    pub j_specify_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AnnotatorConfig {
+    #[serde(rename = "nullUnmarked")]
+    pub nullUnmarked: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct CompileResponse {
     pub success: bool,
@@ -574,6 +801,8 @@ pub struct ExecuteRequest {
     pub action: Action,
     pub preview: bool,
     pub code: String,
+    pub nullaway_config_data: Option<NullAwayConfigData>,
+    pub annotator_config: Option<AnnotatorConfig>,
 }
 
 impl ActionRequest for ExecuteRequest {
@@ -581,6 +810,19 @@ impl ActionRequest for ExecuteRequest {
         self.action
     }
 }
+
+impl NullAwayConfigDataRequest for &ExecuteRequest  {
+    fn nullaway_config_data(&self) -> Option<&NullAwayConfigData> {
+        self.nullaway_config_data.as_ref()
+    }
+}
+
+impl AnnotatorConfigRequest for &ExecuteRequest  {
+    fn annotator_config(&self) -> Option<&AnnotatorConfig> {
+        self.annotator_config.as_ref()
+    }
+}
+
 
 impl ReleaseRequest for ExecuteRequest {
     fn release(&self) -> Option<Release> {
@@ -599,6 +841,7 @@ impl RuntimeRequest for ExecuteRequest {
         self.runtime
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct ExecuteResponse {
@@ -645,6 +888,8 @@ mod test {
                 code: HELLO_WORLD_CODE.to_string(),
                 release: None,
                 preview: false,
+                nullaway_config_data: None,
+                annotator_config: None,
             }
         }
     }
@@ -657,6 +902,8 @@ mod test {
                 code: HELLO_WORLD_CODE.to_string(),
                 release: None,
                 preview: false,
+                nullaway_config_data: None,
+                annotator_config: None,
             }
         }
     }

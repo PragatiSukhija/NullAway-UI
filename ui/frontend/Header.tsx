@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, {useCallback, useState} from 'react';
 import { useSelector } from 'react-redux';
 
 import AdvancedOptionsMenu from './AdvancedOptionsMenu';
@@ -16,6 +16,8 @@ import { useAppDispatch } from './configureStore';
 import { performGistSave } from './reducers/output/gist';
 
 import styles from './Header.module.css';
+import NullAwayConfigMenu from './NullAwayConfigMenu';
+import AnnotatorMenu from './AnnotatorMenu';
 
 const Header: React.FC = () => (
   <div data-test-id="header" className={styles.container}>
@@ -23,13 +25,24 @@ const Header: React.FC = () => (
       <SegmentedButtonSet>
         <ExecuteButton />
         <BuildMenuButton />
+        <NullAwayBuildMenuButton />
+      </SegmentedButtonSet>
+    </HeaderSet>
+    <HeaderSet id="nullawayconfig">
+      <SegmentedButtonSet>
+        <NullAwayConfigMenuButton />
+      </SegmentedButtonSet>
+    </HeaderSet>
+    <HeaderSet id="annotatormenu">
+      <SegmentedButtonSet>
+        <AnnotatorMenuButton />
       </SegmentedButtonSet>
     </HeaderSet>
     <HeaderSet id="channel-mode">
-      <SegmentedButtonSet>
+        {/*<SegmentedButtonSet>
         <RuntimeMenuButton />
         <AdvancedOptionsMenuButton />
-      </SegmentedButtonSet>
+      </SegmentedButtonSet>*/}
     </HeaderSet>
     <HeaderSet id="share">
       <SegmentedButtonSet>
@@ -89,6 +102,16 @@ const BuildMenuButton: React.FC = () => {
   return <PopButton Button={Button} Menu={BuildMenu} />;
 };
 
+const NullAwayBuildMenuButton: React.FC = () => {
+  const Button = React.forwardRef<HTMLButtonElement, { toggle: () => void }>(({ toggle }, ref) => (
+    <SegmentedButton title="Select what to build" ref={ref} onClick={toggle}>
+    </SegmentedButton>
+  ));
+  Button.displayName = 'NullAwayBuildMenuButton.Button';
+
+  return <PopButton Button={Button} Menu={BuildMenu} />;
+};
+
 const RuntimeMenuButton: React.FC = () => {
   const label = useSelector(selectors.getRuntimeLabel);
 
@@ -114,6 +137,28 @@ const AdvancedOptionsMenuButton: React.FC = () => {
 
   return <PopButton Button={Button} Menu={AdvancedOptionsMenu} />;
 }
+
+const NullAwayConfigMenuButton: React.FC = () => {
+  const Button = React.forwardRef<HTMLButtonElement, { toggle: () => void }>(({ toggle }, ref) => (
+    <SegmentedButton title="Advanced compilation flags" ref={ref} onClick={toggle}>
+      <HeaderButton icon={<ConfigIcon />} isExpandable>NullAway Config</HeaderButton>
+    </SegmentedButton>
+  ));
+  Button.displayName = 'NullAwayConfigMenuButton.Button';
+
+  return <PopButton Button={Button} Menu={NullAwayConfigMenu} />;
+};
+
+const AnnotatorMenuButton: React.FC = () => {
+  const Button = React.forwardRef<HTMLButtonElement, { toggle: () => void }>(({ toggle }, ref) => (
+    <SegmentedButton title="Advanced compilation flags" ref={ref} onClick={toggle}>
+      <HeaderButton icon={<ConfigIcon />} isExpandable>Annotator Config</HeaderButton>
+    </SegmentedButton>
+  ));
+  Button.displayName = 'AnnotatorMenuButton.Button';
+
+  return <PopButton Button={Button} Menu={AnnotatorMenu} />;
+};
 
 const ShareButton: React.FC = () => {
   const dispatch = useAppDispatch();

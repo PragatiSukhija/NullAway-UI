@@ -68,3 +68,25 @@ const ConfigElement: React.FC<ConfigElementProps> = ({ name, isNotDefault, aside
     {aside}
   </MenuItem>
 );
+
+interface CheckboxConfigProps {
+  name: string;
+  checked: boolean;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+export const CheckboxConfig: React.FC<CheckboxConfigProps> = ({ name, checked, onChange }) => (
+  <div className="config-item">
+    <label className="checkbox-label">
+      <input
+        type="checkbox"
+        className="checkbox-input"
+        checked={checked}
+        onChange={onChange}
+      />
+      {name}
+    </label>
+  </div>
+);
+
+

@@ -2,9 +2,18 @@ import { Action, ActionType } from '../actions';
 import { performGistLoad } from './output/gist'
 import { performFormat } from './output/format'
 
-const DEFAULT: State = `public class Main {
-    public static void main(String[] args) {
-        System.out.println("Hello, world!");
+const DEFAULT: State = `package com.example;
+
+import org.jspecify.annotations.*;
+
+public class Main {
+    
+    static void log(Object x) {
+        System.out.println(x.toString());
+    }
+    
+    static void foo() {
+        log(null);
     }
 }`;
 

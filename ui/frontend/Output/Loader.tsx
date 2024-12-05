@@ -3,10 +3,21 @@ import React from 'react';
 import GenericLoader from '../Loader';
 import Header from './Header';
 
-const Loader: React.FC = () => (
+
+interface LoaderProps {
+  progressMessage?: string;
+}
+const Loader: React.FC<LoaderProps> = ({ progressMessage }) => (
   <div>
     <Header label="Progress" />
-    <GenericLoader />
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {progressMessage && (
+        <span style={{ fontSize: '0.9rem', fontWeight: 'normal' }}>
+          {progressMessage}
+        </span>
+      )}
+      <GenericLoader />
+    </div>
   </div>
 );
 
