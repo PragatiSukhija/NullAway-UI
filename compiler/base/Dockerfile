@@ -5,6 +5,7 @@ FROM maven:3.9.4-amazoncorretto-21-al2023 AS dependencies
 COPY pom.xml pom.xml
 
 RUN mvn dependency:copy-dependencies
+RUN mvn org.apache.maven.plugins:maven-dependency-plugin:3.2.0:copy@copy-plugin-dependencies
 
 
 FROM ubuntu:20.04 as jre
@@ -39,12 +40,16 @@ RUN /playground/attach_notice.sh /playground/security_notice.txt /etc/passwd && 
     rm -f /playground/attach_notice.sh
 
 COPY --chown=playground --from=dependencies target/dependency /playground/dependencies
+COPY --chown=playground --from=dependencies target/plugins /playground/plugins
 COPY --chown=playground --from=jre jre /playground/jre
 
 USER playground
 ENV USER=playground
 ENV PATH=/playground/jre/bin:$PATH
 WORKDIR /playground
+
+RUN mkdir -p config && \
+    echo "config/nullaway.xml\tconfig/scanner.xml" > config/paths.tsv
 
 ADD --chown=playground entrypoint.sh /playground/tools/
 
