@@ -22,9 +22,9 @@ docker build -t "javaplayground/latest"\
 
 docker build -t "javaplayground/early_access"\
     --platform linux/amd64\
-    --build-arg TARGZ_URL=https://download.java.net/java/early_access/jdk23/34/GPL/openjdk-23-ea+34_linux-x64_bin.tar.gz\
-    --build-arg TARGZ_SHA=9d3fa4fbb8247f3a47788c52c09ac5c265e023cfda821610ade2a43104bdaace\
-    --build-arg TARGZ_FOLDER=jdk-23\
+    --build-arg TARGZ_URL=https://download.java.net/java/GA/jdk23.0.1/c28985cbf10d4e648e4004050f8781aa/11/GPL/openjdk-23.0.1_linux-x64_bin.tar.gz\
+    --build-arg TARGZ_SHA=dc9b6adc1550afd95e30e131c1c38044925cb656923f92f6dbf0fbd8c1405629\
+    --build-arg TARGZ_FOLDER=jdk-23.0.1\
     .
 
 
