@@ -5,28 +5,40 @@ import HeaderButton from './HeaderButton';
 import { BuildIcon } from './Icon';
 import * as actions from './actions';
 import {AnnotatorConfigData} from './types';
-import {useDispatch} from 'react-redux';
+import {useDispatch, useSelector} from 'react-redux';
 import {CheckboxConfig} from './ConfigElement';
+import {setAnnotatorConfig} from "./actions";
+import State from './state';
+import {useAppDispatch} from "./configureStore";
 
 
 interface BuildMenuProps {
   close: () => void;
 }
 
+const useDispatchAndClose = (action: () => actions.ThunkAction, close: () => void) => {
+  const dispatch = useAppDispatch();
 
-const AnnotatorMenu: React.FC<BuildMenuProps> = (props) => {
-  const [nullUnmarked, setNullUnmarked] = useState(false);
+  return useCallback(
+      () => {
+        dispatch(action());
+        close();
+      },
+      [action, close, dispatch]
+  );
+}
 
 
-  const annotatorConfigData: AnnotatorConfigData = {
-    nullUnmarked,
-  };
-
+const AnnotatorMenu: React.FC<BuildMenuProps> = props => {
   const dispatch = useDispatch();
-  const handleBuild = useCallback(() => {
-    dispatch(actions.runAnnotator(annotatorConfigData));
-    props.close(); // Close the prompt
-  }, [dispatch, annotatorConfigData, props]);
+  const annotatorConfig = useSelector((state: State) => state.configuration.annotatorConfig);
+  const handleInputChange = (key: keyof AnnotatorConfigData, value: boolean) => {
+    const updatedConfig: AnnotatorConfigData = {
+      ...annotatorConfig,
+      [key]: value,
+    };
+    dispatch(setAnnotatorConfig(updatedConfig));
+  };
 
   return (
     <Fragment>
@@ -34,14 +46,16 @@ const AnnotatorMenu: React.FC<BuildMenuProps> = (props) => {
         <div className="config-item">
           <CheckboxConfig
             name="&nbsp;&nbsp;Suppress remaining errors"
-            checked={nullUnmarked}
-            onChange={() => setNullUnmarked(!nullUnmarked)}
+            checked={annotatorConfig.nullUnmarked}
+            onChange={() =>
+                handleInputChange('nullUnmarked', !annotatorConfig.nullUnmarked)
+            }
           />
         </div>
       </MenuGroup>
 
       <MenuGroup title="Action">
-        <SegmentedButton isBuild onClick={handleBuild}> {/* Pass configData here */}
+        <SegmentedButton isBuild onClick={useDispatchAndClose(actions.runAnnotator, props.close)}>
           <HeaderButton bold rightIcon={<BuildIcon />}>
                         Annotate
           </HeaderButton>

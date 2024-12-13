@@ -1,4 +1,4 @@
-import {Action, ActionType} from '../actions';
+import {Action, ActionType, setAnnotatorConfig} from '../actions';
 import {
   AssemblyFlavor,
   DemangleAssembly,
@@ -11,6 +11,7 @@ import {
   ProcessAssembly,
   Release,
   Runtime,
+  NullAwayConfigData, AnnotatorConfigData,
 } from '../types';
 
 export interface State {
@@ -31,6 +32,8 @@ export interface State {
   runtime: Runtime;
   release: Release;
   preview: Preview;
+  nullawayConfig: NullAwayConfigData;
+  annotatorConfig: AnnotatorConfigData;
 }
 
 const DEFAULT: State = {
@@ -51,6 +54,15 @@ const DEFAULT: State = {
   runtime: Runtime.Latest,
   release: Release.Java22,
   preview: Preview.Disabled,
+  nullawayConfig: {
+    castToNonNullMethod: '',
+    checkOptionalEmptiness: false,
+    checkContracts: false,
+    jSpecifyMode: false,
+  },
+  annotatorConfig: {
+    nullUnmarked: false,
+  }
 };
 
 const maxRelease = (runtime: Runtime) => {
@@ -102,6 +114,10 @@ export default function configuration(state = DEFAULT, action: Action): State {
     }
     case ActionType.ChangePreview:
       return { ...state, preview: action.preview, release: maxRelease(state.runtime) };
+    case ActionType.SetNullAwayConfig:
+      return { ...state, nullawayConfig: action.config };
+    case ActionType.SetAnnotatorConfig:
+      return { ...state, annotatorConfig: action.annotatorConfig };
     default:
       return state;
   }

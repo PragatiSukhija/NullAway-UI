@@ -7,6 +7,8 @@ import ButtonMenuItem from './ButtonMenuItem';
 import MenuGroup from './MenuGroup';
 
 import styles from './BuildMenu.module.css';
+import State from './state';
+import {useSelector} from "react-redux";
 
 interface BuildMenuProps {
   close: () => void;
