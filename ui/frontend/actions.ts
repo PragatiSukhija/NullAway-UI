@@ -109,6 +109,8 @@ export enum ActionType {
   NotificationSeen = 'NOTIFICATION_SEEN',
   BrowserWidthChanged = 'BROWSER_WIDTH_CHANGED',
   SplitRatioChanged = 'SPLIT_RATIO_CHANGED',
+  SetNullAwayConfig = 'SET_NULLAWAY_CONFIG',
+  SetAnnotatorConfig = 'SET_ANNOTATOR_CONFIG',
 }
 
 
@@ -158,6 +160,12 @@ const changePrimaryAction = (primaryAction: PrimaryAction) =>
 
 export const changeRuntime = (runtime: Runtime) =>
   createAction(ActionType.ChangeRuntime, { runtime });
+
+export const setNullAwayConfig = (config: NullAwayConfigData) =>
+    createAction(ActionType.SetNullAwayConfig, { config });
+
+export const setAnnotatorConfig = (annotatorConfig: AnnotatorConfigData) =>
+    createAction(ActionType.SetAnnotatorConfig, { annotatorConfig });
 
 export const changeRelease = (release: Release) =>
   createAction(ActionType.ChangeRelease, { release });
@@ -265,11 +273,9 @@ function performAutoOnly(): ThunkAction {
 const performExecuteOnly = (): ThunkAction => performCommonExecute('run');
 const performCompileOnly = (): ThunkAction => performCommonExecute('build');
 
-const performNullAwayCompileOnly = (configData?: NullAwayConfigData): ThunkAction =>
-  performCommonExecute('buildWithNullAway', configData);
+const performNullAwayCompileOnly = (): ThunkAction => performCommonExecute('buildWithNullAway');
 
-const performRunAnnotatorOnly = (configData?: NullAwayConfigData,annotatorConfig?: AnnotatorConfigData): ThunkAction =>
-  performCommonExecute('runAnnotator', undefined,annotatorConfig);
+const performRunAnnotatorOnly = (): ThunkAction => performCommonExecute('runAnnotator');
 
 interface CompileSuccess {
   code: string;
@@ -327,15 +333,11 @@ const receiveCompileWasmSuccess = ({ code, stdout, stderr }: CompileSuccess) =>
 const receiveCompileWasmFailure = ({ error }: CompileFailure) =>
   createAction(ActionType.CompileWasmFailed, { error });
 
-const performRunAnnotator = (annotatorConfig?: AnnotatorConfigData) => {
-  return performCommonExecute('runAnnotator', undefined, annotatorConfig);
-};
-
 const PRIMARY_ACTIONS: { [index in PrimaryAction]: () => ThunkAction } = {
   [PrimaryActionCore.Compile]: performCompileOnly,
   [PrimaryActionCore.Execute]: performExecuteOnly,
   [PrimaryActionCore.ExecuteNullAway] : performNullAwayCompileOnly,
-  [PrimaryActionCore.RunAnnotator] : performRunAnnotator,
+  [PrimaryActionCore.RunAnnotator] : performRunAnnotatorOnly,
   [PrimaryActionAuto.Auto]: performAutoOnly,
 };
 
@@ -345,12 +347,9 @@ export const performPrimaryAction = (): ThunkAction => (dispatch, getState) => {
   dispatch(primaryAction());
 };
 
-const performAndSwitchPrimaryAction = (
-  inner: (configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData) => ThunkAction,
-  id: PrimaryAction
-) => (configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData): ThunkAction => dispatch => {
+const performAndSwitchPrimaryAction = (inner: () => ThunkAction, id: PrimaryAction) => (): ThunkAction => dispatch => {
   dispatch(changePrimaryAction(id));
-  dispatch(inner(configData, annotatorConfig));
+  dispatch(inner());
 };
 
 export const performExecute =
@@ -358,13 +357,13 @@ export const performExecute =
 export const performCompile =
   performAndSwitchPrimaryAction(performCompileOnly, PrimaryActionCore.Compile);
 
-export const performNullAwayCompile = (configData?: NullAwayConfigData) => {
-  return performAndSwitchPrimaryAction(performNullAwayCompileOnly, PrimaryActionCore.ExecuteNullAway)(configData);
-};
+export const performNullAwayCompile =
+    performAndSwitchPrimaryAction(performNullAwayCompileOnly, PrimaryActionCore.ExecuteNullAway);
 
-export const runAnnotator = (annotatorConfigData?: AnnotatorConfigData) => {
-  return performAndSwitchPrimaryAction(performRunAnnotatorOnly, PrimaryActionCore.RunAnnotator)(undefined, annotatorConfigData);
-};
+
+export const runAnnotator =
+    performAndSwitchPrimaryAction(performRunAnnotatorOnly, PrimaryActionCore.RunAnnotator);
+
 
 
 export const editCode = (code: string) =>
@@ -597,7 +596,9 @@ export function indexPageLoad({
   runtime: runtimeString,
   release: releaseString,
   preview: previewString,
-}: { code?: string, gist?: string, runtime?: string, release?: string, preview?: string }): ThunkAction {
+  nullawayConfig,
+  annotatorConfig,
+}: { code?: string, gist?: string, runtime?: string, release?: string, preview?: string; nullawayConfig?: NullAwayConfigData; annotatorConfig?: AnnotatorConfigData}): ThunkAction {
   return function(dispatch) {
     const runtime = parseRuntime(runtimeString) || Runtime.Latest;
     const release = parseRelease(releaseString) || Release.Java22;
@@ -615,6 +616,12 @@ export function indexPageLoad({
     dispatch(changeRelease(release));
     dispatch(changePreview(preview));
     dispatch(changeRuntime(runtime));
+    if (nullawayConfig) {
+      dispatch(setNullAwayConfig(nullawayConfig));
+    }
+    if (annotatorConfig) {
+      dispatch(setAnnotatorConfig(annotatorConfig));
+    }
   };
 }
 
@@ -637,6 +644,8 @@ export type Action =
   | ReturnType<typeof changeAssemblyFlavor>
   | ReturnType<typeof changePreview>
   | ReturnType<typeof changeRuntime>
+  | ReturnType<typeof setNullAwayConfig>
+  | ReturnType<typeof setAnnotatorConfig>
   | ReturnType<typeof changeDemangleAssembly>
   | ReturnType<typeof changeRelease>
   | ReturnType<typeof changeEditor>

@@ -1,76 +1,94 @@
-import React, { Fragment, useCallback, useState } from 'react';
+import React, { Fragment, useCallback } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import MenuGroup from './MenuGroup';
 import { CheckboxConfig } from './ConfigElement';
 import { SegmentedButton } from './SegmentedButton';
 import HeaderButton from './HeaderButton';
 import { BuildIcon } from './Icon';
 import * as actions from './actions';
-import {NullAwayConfigData} from './types';
-import {useDispatch} from 'react-redux';
+import { NullAwayConfigData } from './types';
+import State from './state';
+import {setNullAwayConfig} from "./actions";
+import {useAppDispatch} from "./configureStore";
 
 interface BuildMenuProps {
   close: () => void;
 }
 
+const useDispatchAndClose = (action: () => actions.ThunkAction, close: () => void) => {
+    const dispatch = useAppDispatch();
 
-const NullAwayConfigMenu: React.FC<BuildMenuProps> = (props) => {
-  const [castToNonNullMethod, setCastToNonNullMethod] = useState('');
-  const [checkOptionalEmptiness, setCheckOptionalEmptiness] = useState(false);
-  const [checkContracts, setCheckContracts] = useState(false);
-  const [jSpecifyMode, setJSpecifyMode] = useState(false);
+    return useCallback(
+        () => {
+            dispatch(action());
+            close();
+        },
+        [action, close, dispatch]
+    );
+}
 
-  const nullawayConfigData: NullAwayConfigData = {
-    castToNonNullMethod,
-    checkOptionalEmptiness,
-    checkContracts,
-    jSpecifyMode,
+const NullAwayConfigMenu: React.FC<BuildMenuProps> = props => {
+  const dispatch = useDispatch();
+  const nullAwayConfig = useSelector((state: State) => state.configuration.nullawayConfig);
+  const handleInputChange = (key: keyof NullAwayConfigData, value: any) => {
+     const updatedConfig: NullAwayConfigData = {
+        ...nullAwayConfig,
+        [key]: value,
+     };
+     dispatch(setNullAwayConfig(updatedConfig));
   };
 
-  const dispatch = useDispatch();
-  const handleBuild = useCallback(() => {
-    dispatch(actions.performNullAwayCompile(nullawayConfigData)); // Dispatch the action
-    props.close(); // Close the prompt
-  }, [dispatch, nullawayConfigData, props]);
 
   return (
-    <Fragment>
-      <MenuGroup title="NullAway Config">
-        <div className="config-item">
-          <label>
+      <Fragment>
+        <MenuGroup title="NullAway Config">
+          <div className="config-item">
+            <label>
               CastToNonNullMethod&nbsp;&nbsp;
-            <input
-              type="text"
-              value={castToNonNullMethod}
-              onChange={(e) => setCastToNonNullMethod(e.target.value)}
-              className="config-input"
-            />
-          </label>
-        </div>
-        <CheckboxConfig
-          name="&nbsp;&nbsp;CheckOptionalEmptiness"
-          checked={checkOptionalEmptiness}
-          onChange={() => setCheckOptionalEmptiness(!checkOptionalEmptiness)}
-        />
-        <CheckboxConfig
-          name="&nbsp;&nbsp;CheckContracts"
-          checked={checkContracts}
-          onChange={() => setCheckContracts(!checkContracts)}
-        />
-        <CheckboxConfig
-          name="&nbsp;&nbsp;JSpecifyMode"
-          checked={jSpecifyMode}
-          onChange={() => setJSpecifyMode(!jSpecifyMode)}
-        />
-      </MenuGroup>
+              <input
+                  type="text"
+                  value={nullAwayConfig.castToNonNullMethod}
+                  onChange={(e) =>
+                      handleInputChange('castToNonNullMethod', e.target.value)
+                  }
+                  className="config-input"
+              />
+            </label>
+          </div>
+          <CheckboxConfig
+              name="&nbsp;&nbsp;CheckOptionalEmptiness"
+              checked={nullAwayConfig.checkOptionalEmptiness}
+              onChange={() =>
+                  handleInputChange(
+                      'checkOptionalEmptiness',
+                      !nullAwayConfig.checkOptionalEmptiness
+                  )
+              }
+          />
+          <CheckboxConfig
+              name="&nbsp;&nbsp;CheckContracts"
+              checked={nullAwayConfig.checkContracts}
+              onChange={() =>
+                  handleInputChange('checkContracts', !nullAwayConfig.checkContracts)
+              }
+          />
+          <CheckboxConfig
+              name="&nbsp;&nbsp;JSpecifyMode"
+              checked={nullAwayConfig.jSpecifyMode}
+              onChange={() =>
+                  handleInputChange('jSpecifyMode', !nullAwayConfig.jSpecifyMode)
+              }
+          />
+        </MenuGroup>
 
-      <MenuGroup title="Action">
-        <SegmentedButton isBuild onClick={handleBuild}> {/* Pass configData here */}
-          <HeaderButton bold rightIcon={<BuildIcon />}>
+        <MenuGroup title="Action">
+          <SegmentedButton isBuild onClick={useDispatchAndClose(actions.performNullAwayCompile, props.close)}>
+            <HeaderButton bold rightIcon={<BuildIcon />}>
               Build
-          </HeaderButton>
-        </SegmentedButton>
-      </MenuGroup>
-    </Fragment>
+            </HeaderButton>
+          </SegmentedButton>
+        </MenuGroup>
+      </Fragment>
   );
 };
 

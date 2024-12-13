@@ -3,13 +3,14 @@ import * as z from 'zod';
 
 import { SimpleThunkAction, adaptFetchError, jsonPost, routes } from '../../actions';
 import { executeRequestPayloadSelector, useWebsocketSelector } from '../../selectors';
-import {AnnotatorConfigData, NullAwayConfigData, Release, Runtime} from '../../types';
 import {
   WsPayloadAction,
   createWebsocketResponseAction,
   createWebsocketResponseSchema,
   makeWebSocketMeta,
 } from '../../websocketActions';
+import {useSelector} from "react-redux";
+import {Release, Runtime} from "../../types";
 
 const initialState: State = {
   requestsInProgress: 0,
@@ -140,10 +141,11 @@ export const performCommonExecute =
 */
 
 export const performCommonExecute =
-    (action: string, configData?: NullAwayConfigData, annotatorConfig?: AnnotatorConfigData): SimpleThunkAction =>
+    (action: string): SimpleThunkAction =>
         (dispatch, getState) => {
-          console.log('Annotator Config Data:', annotatorConfig);
           const state = getState();
+          const configData = state.configuration.nullawayConfig;
+          const annotatorConfig = state.configuration.annotatorConfig;
           const body = executeRequestPayloadSelector(state, { action, configData, annotatorConfig });
           const useWebSocket = useWebsocketSelector(state);
 
